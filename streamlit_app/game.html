@@ -1,0 +1,884 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beat the Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0c0d10;
+    --panel: #15171c;
+    --panel-2: #1c1f26;
+    --border: #2a2e37;
+    --text: #eceef2;
+    --muted: #8b919e;
+    --accent: #f0b429;
+    --good: #4cc38a;
+    --bad: #e5484d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: Inter, system-ui, sans-serif; overflow: hidden; user-select: none;
+  }
+  body { outline: none; }
+  #wrap { height: 100%; display: grid; place-items: center; padding: 6px 12px; }
+  #frame { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  #court { position: relative; }
+  canvas#cv { display: block; border-radius: 6px; }
+
+  /* Score bug */
+  #bug {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 2;
+    display: flex; height: 38px; border-radius: 4px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    font-family: Oswald, "Arial Narrow", sans-serif;
+  }
+  #bug .side { display: flex; align-items: center; background: #111318; }
+  #bug .name { padding: 0 12px; color: #cfd3da; font-size: 15px; letter-spacing: 1.5px; }
+  #bug .pts { padding: 0 14px; font-size: 22px; background: #1b1e25; align-self: stretch; display: flex; align-items: center; min-width: 46px; justify-content: center; }
+  #bug .mid { background: #f2f2f2; color: #111; padding: 0 14px; display: flex; align-items: center; font-size: 15px; letter-spacing: 1px; }
+  .flash { animation: flash .6s ease-out; }
+  @keyframes flash { 0% { background: var(--accent); color: #111; } }
+
+  #icon {
+    position: absolute; top: 10px; right: 10px; z-index: 2; width: 32px; height: 32px; display: grid; place-items: center;
+    border-radius: 4px; cursor: pointer; background: rgba(12,13,16,.75); border: 1px solid rgba(255,255,255,.12); color: #dfe2e8;
+  }
+  #icon svg { width: 16px; height: 16px; }
+
+  #result {
+    position: absolute; left: 50%; top: 36%; transform: translate(-50%, -50%); z-index: 2; pointer-events: none;
+    font-family: Oswald, "Arial Narrow", sans-serif; font-size: 72px; letter-spacing: 4px; color: #fff;
+    text-shadow: 0 4px 20px rgba(0,0,0,.6); opacity: 0; transition: opacity .25s;
+  }
+  #result.show { opacity: 1; }
+
+  /* Panel under the court */
+  #panel { width: 100%; text-align: center; min-height: 128px; }
+  #shotName { font-family: Oswald, "Arial Narrow", sans-serif; font-size: 24px; letter-spacing: .5px; }
+  #shotInfo { color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .choices { display: flex; justify-content: center; gap: 12px; margin-top: 12px; }
+  .choice {
+    width: 190px; padding: 10px 0 9px; border-radius: 6px; cursor: pointer; background: var(--panel);
+    border: 1px solid var(--border); color: var(--text); font-family: Oswald, "Arial Narrow", sans-serif;
+    font-size: 24px; letter-spacing: 3px; transition: border-color .15s, background .15s;
+  }
+  .choice small { display: block; font-family: Inter, sans-serif; font-size: 11px; letter-spacing: 0; color: var(--muted); margin-top: 2px; }
+  .choice.in:hover { border-color: var(--good); background: #16241d; }
+  .choice.out:hover { border-color: var(--bad); background: #2a1719; }
+
+  .reveal { display: none; margin-top: 10px; }
+  .reveal.show { display: block; }
+  .verdicts { display: flex; justify-content: center; gap: 12px; }
+  .verdict { width: 230px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; text-align: left; }
+  .verdict .who { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .verdict .what { font-family: Oswald, "Arial Narrow", sans-serif; font-size: 19px; margin-top: 1px; }
+  .verdict .ok { font-size: 12px; font-weight: 600; float: right; margin-top: -1px; }
+  .why { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .why b { color: #dfe2e8; font-weight: 500; }
+  .next {
+    margin-top: 10px; padding: 8px 26px; border: 0; border-radius: 6px; cursor: pointer; background: var(--accent); color: #111;
+    font: 600 16px Oswald, "Arial Narrow", sans-serif; letter-spacing: 2px; visibility: hidden;
+  }
+
+  /* Start / end screens */
+  .overlay { position: absolute; inset: 0; z-index: 5; display: none; place-items: center; background: rgba(8,9,12,.8); border-radius: 6px; }
+  .overlay.show { display: grid; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 26px 30px; width: min(440px, 92%); text-align: center; }
+  .card h1 { font-family: Oswald, "Arial Narrow", sans-serif; font-weight: 600; font-size: 38px; letter-spacing: 3px; margin: 0; }
+  .card p { color: #c9cdd5; font-size: 14px; line-height: 1.55; margin: 12px 0 0; }
+  .card .small { color: var(--muted); font-size: 12px; }
+  .btn {
+    display: block; width: 100%; margin-top: 20px; padding: 12px; border: 0; border-radius: 6px; cursor: pointer;
+    background: var(--accent); color: #111; font: 600 18px Oswald, "Arial Narrow", sans-serif; letter-spacing: 2px;
+  }
+  .final { font-family: Oswald, "Arial Narrow", sans-serif; font-size: 44px; letter-spacing: 2px; margin-top: 4px; }
+  .rounds { display: flex; justify-content: center; gap: 5px; margin-top: 14px; }
+  .round { width: 26px; border-radius: 3px; overflow: hidden; border: 1px solid var(--border); }
+  .round div { height: 9px; }
+  .legend { display: flex; justify-content: center; gap: 14px; color: var(--muted); font-size: 11px; margin-top: 6px; }
+</style>
+</head>
+<body tabindex="0">
+<div id="wrap">
+  <div id="frame">
+    <div id="court">
+      <canvas id="cv"></canvas>
+
+      <div id="bug">
+        <div class="side"><div class="name">YOU</div><div class="pts" id="youPts">0</div></div>
+        <div class="mid" id="round">SHOT 1 / 10</div>
+        <div class="side"><div class="pts" id="modelPts">0</div><div class="name">MODEL</div></div>
+      </div>
+      <div id="icon" title="Sound">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path id="waves" d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+      </div>
+      <div id="result"></div>
+
+      <div class="overlay show" id="start">
+        <div class="card">
+          <h1>BEAT THE MODEL</h1>
+          <p>You will see 10 real shots Kobe Bryant took. For each one, guess if it went in. Our model makes its guess too.</p>
+          <p class="small">These shots come from the test set: the model never saw them while it was trained.</p>
+          <button class="btn" id="startBtn">START</button>
+        </div>
+      </div>
+
+      <div class="overlay" id="end">
+        <div class="card">
+          <div class="small">FINAL</div>
+          <div class="final" id="finalScore">YOU 0 – 0 MODEL</div>
+          <p id="finalText"></p>
+          <div class="rounds" id="rounds"></div>
+          <div class="legend"><span>top: you</span><span>bottom: model</span><span style="color:var(--good)">right</span><span style="color:var(--bad)">wrong</span></div>
+          <button class="btn" id="againBtn">PLAY AGAIN</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="panel">
+      <div id="shotName">&nbsp;</div>
+      <div id="shotInfo">&nbsp;</div>
+      <div class="choices" id="choices">
+        <button class="choice in" id="inBtn">IN<small>He scores</small></button>
+        <button class="choice out" id="outBtn">OUT<small>He misses</small></button>
+      </div>
+      <div class="reveal" id="reveal">
+        <div class="verdicts">
+          <div class="verdict"><span class="ok" id="youOk"></span><div class="who">You said</div><div class="what" id="youSaid"></div></div>
+          <div class="verdict"><span class="ok" id="modelOk"></span><div class="who">Model said</div><div class="what" id="modelSaid"></div></div>
+        </div>
+        <div class="why" id="why"></div>
+        <button class="next" id="nextBtn">NEXT SHOT</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+// ====================================================================
+// 1. Data: real test-set shots with the model's probability (from export_model.py)
+// ====================================================================
+const MODEL = /*__MODEL_DATA__*/null;
+const POOL = MODEL.quiz;
+const ROUNDS = 10;
+
+const TEAMS = {
+  ATL: ["Atlanta Hawks", "#C8102E", "#FDB927"], BKN: ["Brooklyn Nets", "#111111", "#FFFFFF"], BOS: ["Boston Celtics", "#007A33", "#FFFFFF"],
+  CHA: ["Charlotte Bobcats", "#F26532", "#1D1160"], CHI: ["Chicago Bulls", "#CE1141", "#FFFFFF"], CLE: ["Cleveland Cavaliers", "#860038", "#FDBB30"],
+  DAL: ["Dallas Mavericks", "#00538C", "#FFFFFF"], DEN: ["Denver Nuggets", "#0E2240", "#FEC524"], DET: ["Detroit Pistons", "#1D42BA", "#FFFFFF"],
+  GSW: ["Golden State Warriors", "#1D428A", "#FFC72C"], HOU: ["Houston Rockets", "#CE1141", "#FFFFFF"], IND: ["Indiana Pacers", "#002D62", "#FDBB30"],
+  LAC: ["LA Clippers", "#C8102E", "#FFFFFF"], MEM: ["Memphis Grizzlies", "#5D76A9", "#FFFFFF"], MIA: ["Miami Heat", "#98002E", "#FFFFFF"],
+  MIL: ["Milwaukee Bucks", "#00471B", "#EEE1C6"], MIN: ["Minnesota Timberwolves", "#0C2340", "#FFFFFF"], NJN: ["New Jersey Nets", "#002A60", "#FFFFFF"],
+  NOH: ["New Orleans Hornets", "#008CA8", "#FFFFFF"], NOP: ["New Orleans Pelicans", "#0C2340", "#C8102E"], NYK: ["New York Knicks", "#006BB6", "#F58426"],
+  OKC: ["Oklahoma City Thunder", "#007AC1", "#FFFFFF"], ORL: ["Orlando Magic", "#0077C0", "#FFFFFF"], PHI: ["Philadelphia 76ers", "#006BB6", "#FFFFFF"],
+  PHX: ["Phoenix Suns", "#1D1160", "#E56020"], POR: ["Portland Trail Blazers", "#E03A3E", "#FFFFFF"], SAC: ["Sacramento Kings", "#5A2D81", "#FFFFFF"],
+  SAS: ["San Antonio Spurs", "#1a1a1a", "#C4CED4"], SEA: ["Seattle SuperSonics", "#00653A", "#FFC200"], TOR: ["Toronto Raptors", "#CE1141", "#FFFFFF"],
+  UTA: ["Utah Jazz", "#002B5C", "#F9A01B"], VAN: ["Vancouver Grizzlies", "#00B2A9", "#FFFFFF"], WAS: ["Washington Wizards", "#002B5C", "#E31837"],
+};
+const SKIN = ["#8d5524", "#6b3e1f", "#c68642", "#e0ac69", "#5a3418", "#a8693a"];
+
+function seasonText(s) { return `${s}-${String((s + 1) % 100).padStart(2, "0")}`; }
+function periodText(p) { return p <= 4 ? ["1st", "2nd", "3rd", "4th"][p - 1] + " quarter" : p === 5 ? "Overtime" : `${p - 4}OT`; }
+function clockText(t) { return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; }
+
+// ====================================================================
+// 2. Camera: broadcast view from behind half court, looking at the basket
+//    World units are tenths of a foot (same as loc_x / loc_y). z is height.
+// ====================================================================
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const W = 1000, H = 640;
+cv.width = W; cv.height = H;
+
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const normv = a => { const l = Math.hypot(...a); return a.map(v => v / l); };
+
+// Camera with a 60 degree field of view. It moves behind Kobe for every shot.
+const F = (W / 2) / Math.tan(30 * Math.PI / 180), CX = W / 2, CY = H / 2;
+const NEAR = 12;
+let CAM = [0, 600, 300], FWD = [0, -1, 0], RIGHT = [1, 0, 0], UP = [0, 0, 1];
+
+function lookAt(cam, target) {
+  CAM = cam;
+  FWD = normv(sub(target, cam));
+  RIGHT = normv([-FWD[1], FWD[0], 0]);
+  UP = [FWD[1] * RIGHT[2] - FWD[2] * RIGHT[1], FWD[2] * RIGHT[0] - FWD[0] * RIGHT[2], FWD[0] * RIGHT[1] - FWD[1] * RIGHT[0]];
+}
+
+function setCamera(shot) {
+  // Stand behind the shooter, looking past him at the basket
+  const d = Math.hypot(shot.x, shot.y);
+  const dir = d > 30 ? [shot.x / d, shot.y / d] : [0, 1];
+  lookAt([shot.x + dir[0] * 230, shot.y + dir[1] * 230, 150], [shot.x * .55, shot.y * .55, 40]);
+}
+
+function toCam(q) {
+  const d = [q[0] - CAM[0], q[1] - CAM[1], (q[2] || 0) - CAM[2]];
+  return [dot(d, RIGHT), dot(d, UP), dot(d, FWD)];
+}
+function screen(c) { return [CX + F * c[0] / c[2], CY - F * c[1] / c[2]]; }
+function project(x, y, z) { const c = toCam([x, y, z]); return [...screen(c), c[2]]; }
+
+// ====================================================================
+// 3. Arena and court (drawn again for every camera position)
+// ====================================================================
+const floor = document.createElement("canvas");
+floor.width = W; floor.height = H;
+
+// Cut polygons at the camera's near plane so nothing behind the camera is drawn
+function clipPolygon(cs) {
+  const out = [];
+  for (let i = 0; i < cs.length; i++) {
+    const a = cs[i], b = cs[(i + 1) % cs.length];
+    const ain = a[2] >= NEAR, bin = b[2] >= NEAR;
+    if (ain) out.push(a);
+    if (ain !== bin) { const t = (NEAR - a[2]) / (b[2] - a[2]); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, NEAR]); }
+  }
+  return out;
+}
+function addPoly(c, pts) {
+  const cs = clipPolygon(pts.map(toCam));
+  cs.forEach((q, i) => { const p = screen(q); i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]); });
+  if (cs.length) c.closePath();
+  return cs.length > 2;
+}
+function poly(c, pts) { c.beginPath(); return addPoly(c, pts); }
+function path(c, pts) {
+  const cs = pts.map(toCam);
+  c.beginPath();
+  for (let i = 0; i < cs.length; i++) {
+    const a = cs[i];
+    if (i === 0) { if (a[2] >= NEAR) { const s = screen(a); c.moveTo(s[0], s[1]); } continue; }
+    const p = cs[i - 1], pin = p[2] >= NEAR, ain = a[2] >= NEAR;
+    if (pin && ain) { const s = screen(a); c.lineTo(s[0], s[1]); }
+    else if (pin !== ain) {
+      const t = (NEAR - p[2]) / (a[2] - p[2]);
+      const m = screen([p[0] + (a[0] - p[0]) * t, p[1] + (a[1] - p[1]) * t, NEAR]);
+      if (pin) c.lineTo(m[0], m[1]);
+      else { c.moveTo(m[0], m[1]); const s = screen(a); c.lineTo(s[0], s[1]); }
+    }
+  }
+}
+
+function arcPts(cx, cy, r, a1, a2, n = 60) {
+  const out = [];
+  for (let i = 0; i <= n; i++) { const a = a1 + (a2 - a1) * i / n; out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
+  return out;
+}
+
+function drawFloor() {
+  const c = floor.getContext("2d");
+  let seed = 31;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const onScreen = (p) => p[2] > NEAR && p[0] > -60 && p[0] < W + 60 && p[1] > -60 && p[1] < H + 60;
+
+  // Dark arena, dark floor around the court, then the wooden floor
+  c.fillStyle = "#08090b"; c.fillRect(0, 0, W, H);
+  poly(c, [[-900, -400], [900, -400], [900, 1200], [-900, 1200]]); c.fillStyle = "#1a1715"; c.fill();
+  poly(c, [[-330, -130], [330, -130], [330, 900], [-330, 900]]); c.fillStyle = "#c99a62"; c.fill();
+
+  // Maple boards running toward the basket, with staggered joints
+  const BW = 2.25 / 12 * 10;
+  for (let x = -330; x < 330; x += BW) {
+    let y = -130 - rnd() * 60;
+    while (y < 900) {
+      const len = 25 + rnd() * 70;
+      const y1 = Math.max(-130, y), y2 = Math.min(900, y + len);
+      const hue = 31 + rnd() * 6, sat = 42 + rnd() * 9, li = 60 + rnd() * 8;
+      const a = project(x, y1, 0), b = project(x + BW, y2, 0);
+      if (onScreen(a) || onScreen(b)) {
+        if (poly(c, [[x, y1], [x + BW, y1], [x + BW, y2], [x, y2]])) { c.fillStyle = `hsl(${hue},${sat}%,${li}%)`; c.fill(); }
+        path(c, [[x, y1], [x + BW, y1]]); c.strokeStyle = "rgba(90,50,20,.3)"; c.lineWidth = .6; c.stroke();
+      }
+      y += len;
+    }
+  }
+
+  // Out of bounds: darker stained wood
+  c.beginPath();
+  addPoly(c, [[-330, -130], [330, -130], [330, 900], [-330, 900]]);
+  addPoly(c, [[-250, -52.5], [250, -52.5], [250, 900], [-250, 900]]);
+  c.fillStyle = "rgba(60,28,10,.5)"; c.fill("evenodd");
+  // Stained lane and center circle
+  if (poly(c, [[-80, -52.5], [80, -52.5], [80, 137.5], [-80, 137.5]])) { c.fillStyle = "rgba(95,45,15,.45)"; c.fill(); }
+  if (poly(c, arcPts(0, 417.5, 60, 0, Math.PI * 2))) { c.fillStyle = "rgba(95,45,15,.45)"; c.fill(); }
+
+  // Arena lights reflecting on the varnish
+  for (const [x, y, r] of [[-110, 40, 160], [110, 40, 160], [0, 220, 220], [0, 480, 220]]) {
+    const p = project(x, y, 0);
+    if (p[2] < NEAR) continue;
+    const rr = F * r / p[2];
+    const g = c.createRadialGradient(p[0], p[1], 0, p[0], p[1], rr);
+    g.addColorStop(0, "rgba(255,250,235,.13)"); g.addColorStop(1, "rgba(255,250,235,0)");
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+  }
+
+  // Court lines (2 inches wide, so they get thinner far away)
+  c.strokeStyle = "#f6f3ec"; c.lineCap = "round";
+  const line = (pts, dash) => {
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i];
+      const z = toCam([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0])[2];
+      if (z < NEAR) continue;
+      c.setLineDash(dash ? dash.map(v => F * v / z) : []);
+      path(c, [a, b]); c.lineWidth = Math.max(1, F * 1.7 / z); c.stroke();
+    }
+    c.setLineDash([]);
+  };
+  const seg = (a, b, n = 12) => Array.from({ length: n + 1 }, (_, i) => [a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n]);
+  line(seg([-250, -52.5], [250, -52.5], 30));
+  line(seg([-250, -52.5], [-250, 900], 40)); line(seg([250, -52.5], [250, 900], 40));
+  line(seg([-250, 417.5], [250, 417.5], 30));
+  line([...seg([-80, -52.5], [-80, 137.5]), ...seg([-80, 137.5], [80, 137.5]).slice(1), ...seg([80, 137.5], [80, -52.5]).slice(1)]);
+  line(arcPts(0, 137.5, 60, 0, Math.PI));
+  line(arcPts(0, 137.5, 60, Math.PI, Math.PI * 2), [12, 10]);
+  line(arcPts(0, 0, 40, 0, Math.PI));
+  const yc = Math.sqrt(237.5 ** 2 - 220 ** 2), ang = Math.atan2(yc, 220);
+  line(seg([-220, -52.5], [-220, yc])); line(seg([220, -52.5], [220, yc]));
+  line(arcPts(0, 0, 237.5, ang, Math.PI - ang, 120));
+  line(arcPts(0, 417.5, 60, 0, Math.PI * 2, 80));
+  line(arcPts(0, 417.5, 20, 0, Math.PI * 2, 40));
+  for (const s of [-1, 1]) {
+    for (const d of [110, 140, 170]) line([[s * 80, -52.5 + d], [s * 86, -52.5 + d]]);
+    if (poly(c, [[s * 80, 17.5], [s * 86.7, 17.5], [s * 86.7, 27.5], [s * 80, 27.5]])) { c.fillStyle = "#f6f3ec"; c.fill(); }
+    line([[s * 250, 227.5], [s * 220, 227.5]]);
+  }
+
+  // Basket support behind the baseline
+  const box = (x1, x2, y1, y2, z1, z2, top, side) => {
+    if (poly(c, [[x1, y2, z1], [x2, y2, z1], [x2, y2, z2], [x1, y2, z2]])) { c.fillStyle = side; c.fill(); }
+    if (poly(c, [[x1, y1, z2], [x2, y1, z2], [x2, y2, z2], [x1, y2, z2]])) { c.fillStyle = top; c.fill(); }
+  };
+  if (poly(c, [[-28, -128], [28, -128], [30, -86], [-30, -86]])) { c.fillStyle = "rgba(0,0,0,.35)"; c.fill(); }
+  box(-24, 24, -122, -92, 0, 32, "#2a3448", "#1c2433");
+  box(-4, 4, -104, -96, 32, 112, "#3b4558", "#2b3446");
+  box(-3, 3, -100, -14, 106, 112, "#4a5468", "#3a4458");
+  if (poly(c, [[-32, -16], [32, -16], [36, 10], [-36, 10]])) { c.fillStyle = "rgba(0,0,0,.08)"; c.fill(); }
+
+  // Stands: rows of fans behind the baseline and along the sidelines
+  const fan = (x, y, z) => {
+    const p = project(x, y, z);
+    if (!onScreen(p)) return;
+    const r = F * 4.2 / p[2];
+    const tone = rnd();
+    c.fillStyle = `hsl(${rnd() * 360}, ${10 + rnd() * 25}%, ${12 + tone * 20}%)`;
+    c.beginPath(); c.ellipse(p[0], p[1] + r * 1.6, r * 1.5, r * 1.1, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = `hsl(25, 30%, ${14 + tone * 18}%)`;
+    c.beginPath(); c.arc(p[0], p[1], r * .8, 0, Math.PI * 2); c.fill();
+  };
+  for (let row = 17; row >= 0; row--) {
+    const z = 22 + row * 17, back = row * 24;
+    for (let x = -620; x < 620; x += 15 + rnd() * 4) fan(x + rnd() * 4, -150 - back, z);
+    for (const s of [-1, 1]) for (let y = -150; y < 900; y += 15 + rnd() * 4) fan(s * (345 + back), y, z);
+  }
+  // Courtside sign boards
+  if (poly(c, [[-330, -132, 0], [330, -132, 0], [330, -132, 30], [-330, -132, 30]])) { c.fillStyle = "#111318"; c.fill(); }
+  if (poly(c, [[-330, -132, 24], [330, -132, 24], [330, -132, 30], [-330, -132, 30]])) { c.fillStyle = "#23272f"; c.fill(); }
+}
+
+function drawBackboard() {
+  // Glass board with border and target square
+  poly(ctx, [[-30, -12.5, 95], [30, -12.5, 95], [30, -12.5, 137], [-30, -12.5, 137]]);
+  ctx.fillStyle = "rgba(220,235,245,.16)"; ctx.fill();
+  ctx.strokeStyle = "#f2f2f2"; ctx.lineWidth = 2.4; ctx.stroke();
+  poly(ctx, [[-10, -12.5, 101], [10, -12.5, 101], [10, -12.5, 116], [-10, -12.5, 116]]);
+  ctx.lineWidth = 1.8; ctx.stroke();
+  // Rim bracket
+  path(ctx, [[0, -12.5, 100], [0, -7.5, 100]]); ctx.strokeStyle = "#c84a14"; ctx.lineWidth = 3; ctx.stroke();
+}
+
+function drawRimHalf(front, ripple) {
+  // Rim (back or front half) with the net hanging under it
+  const pts = [];
+  const a1 = front ? 0 : Math.PI, a2 = front ? Math.PI : Math.PI * 2;
+  for (let i = 0; i <= 24; i++) {
+    const a = a1 + (a2 - a1) * i / 24;
+    pts.push([7.5 * Math.cos(a), 7.5 * Math.sin(a), 100]);
+  }
+  // Net
+  ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 1;
+  for (let i = 0; i <= 24; i += 2) {
+    const a = a1 + (a2 - a1) * i / 24;
+    const top = project(7.5 * Math.cos(a), 7.5 * Math.sin(a), 100);
+    const bottom = project(4.5 * Math.cos(a + .25), 4.5 * Math.sin(a + .25), 82 - ripple * 6);
+    ctx.beginPath(); ctx.moveTo(top[0], top[1]); ctx.lineTo(bottom[0], bottom[1]); ctx.stroke();
+  }
+  path(ctx, pts.map(p => [p[0] * .62, p[1] * .62, 88 - ripple * 4])); ctx.stroke();
+  path(ctx, pts);
+  ctx.strokeStyle = "#e0561b"; ctx.lineWidth = 3.2; ctx.stroke();
+}
+
+// ====================================================================
+// 4. Players
+// ====================================================================
+// Figure drawn at the projected foot point, h = projected height in pixels.
+// facing "back": we see the back of the jersey (Kobe facing the basket). "front": defender facing us.
+function drawPlayer(foot, h, o) {
+  const [fx, fy] = foot;
+  const lift = (o.jump || 0) * .22 * h;
+  // Shadow on the floor
+  ctx.fillStyle = `rgba(0,0,0,${.32 - (o.jump || 0) * .15})`;
+  ctx.beginPath(); ctx.ellipse(fx, fy, h * .2, h * .045, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.save();
+  ctx.translate(fx, fy - lift);
+  const P = (x, y) => [x * h, -y * h];
+  const L = (pts, w, color) => {
+    ctx.beginPath(); pts.forEach((q, i) => { const p = P(q[0], q[1]); i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+    ctx.lineWidth = w * h; ctx.strokeStyle = color; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke();
+    if (color === o.skin) {
+      ctx.save(); ctx.translate(-w * h * .18, 0);
+      ctx.lineWidth = w * h * .35; ctx.strokeStyle = "rgba(255,230,200,.16)"; ctx.stroke(); ctx.restore();
+    }
+  };
+  const fillPoly = (pts, fill) => {
+    ctx.beginPath(); pts.forEach((q, i) => { const p = P(q[0], q[1]); i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+    ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,.28)"; ctx.lineWidth = Math.max(.6, h * .004); ctx.stroke();
+  };
+  const shade = (base) => {
+    const g = ctx.createLinearGradient(-.15 * h, 0, .15 * h, 0);
+    g.addColorStop(0, shadeColor(base, -.28)); g.addColorStop(.45, base); g.addColorStop(1, shadeColor(base, -.18));
+    return g;
+  };
+  const tuck = (o.jump || 0) * .04;
+
+  // Legs, socks and shoes
+  for (const s of [-1, 1]) {
+    L([[s * .055, .43], [s * (.065 + tuck), .25 + tuck], [s * .06, .07 + tuck]], .058, o.skin);
+    L([[s * .062, .135 + tuck], [s * .06, .06 + tuck]], .062, "#f4f4f4");
+    ctx.fillStyle = "#151515";
+    const p = P(s * .062, .035 + tuck);
+    ctx.beginPath(); ctx.ellipse(p[0], p[1], .045 * h, .028 * h, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#f4f4f4";
+    ctx.beginPath(); ctx.ellipse(p[0], p[1] + .012 * h, .04 * h, .01 * h, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // Shorts
+  fillPoly([[-.125, .56], [.125, .56], [.14, .36], [.015, .37], [0, .41], [-.015, .37], [-.14, .36]], shade(o.jersey));
+  L([[-.133, .55], [-.14, .37]], .014, o.trim); L([[.133, .55], [.14, .37]], .014, o.trim);
+
+  // Arms: drawn before the jersey for the front view, after it for the back view
+  const arms = armPose(o.pose === "set" && o.facing === "back" ? "ready" : o.pose);
+  const drawArms = () => {
+    for (const s of [-1, 1]) {
+      const a = arms[s > 0 ? 1 : 0];
+      L([[s * .118, .79], a[0]], .052, o.skin);
+      L([a[0], a[1]], .044, o.skin);
+      const hp = P(...a[1]);
+      ctx.fillStyle = o.skin; ctx.beginPath(); ctx.arc(hp[0], hp[1], .026 * h, 0, Math.PI * 2); ctx.fill();
+    }
+  };
+  if (o.facing === "front") drawArms();
+
+  // Jersey (tank top)
+  fillPoly([[-.112, .56], [.112, .56], [.118, .7], [.13, .79], [.085, .825], [.05, .8], [0, .79], [-.05, .8], [-.085, .825], [-.13, .79], [-.118, .7]], shade(o.jersey));
+  // Trim around neck and arm holes
+  L([[-.05, .805], [0, o.facing === "front" ? .76 : .795], [.05, .805]], .012, o.trim);
+  L([[-.085, .82], [-.124, .77], [-.118, .7]], .012, o.trim);
+  L([[.085, .82], [.124, .77], [.118, .7]], .012, o.trim);
+  // Name and number
+  ctx.fillStyle = o.trim; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  if (o.facing === "back") {
+    ctx.font = `600 ${.033 * h}px Oswald, "Arial Narrow", sans-serif`;
+    ctx.fillText(o.name, 0, -.755 * h);
+    ctx.font = `600 ${.12 * h}px Oswald, "Arial Narrow", sans-serif`;
+    ctx.strokeStyle = "#ffffff"; ctx.lineWidth = .007 * h; ctx.strokeText(o.number, 0, -.665 * h);
+    ctx.fillText(o.number, 0, -.665 * h);
+  } else {
+    ctx.font = `600 ${.04 * h}px Oswald, "Arial Narrow", sans-serif`;
+    ctx.fillText(o.code, 0, -.74 * h);
+    ctx.font = `600 ${.075 * h}px Oswald, "Arial Narrow", sans-serif`;
+    ctx.fillText(o.number, 0, -.67 * h);
+  }
+
+  // Neck and head
+  L([[0, .8], [0, .845]], .05, o.skin);
+  const hc = P(0, .9);
+  ctx.fillStyle = o.skin;
+  ctx.beginPath(); ctx.ellipse(hc[0], hc[1], .046 * h, .057 * h, 0, 0, Math.PI * 2); ctx.fill();
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(hc[0] + s * .046 * h, hc[1] + .004 * h, .009 * h, .015 * h, 0, 0, Math.PI * 2); ctx.fill(); }
+  const light = ctx.createRadialGradient(hc[0] - .015 * h, hc[1] - .025 * h, 0, hc[0], hc[1], .06 * h);
+  light.addColorStop(0, "rgba(255,255,255,.18)"); light.addColorStop(1, "rgba(0,0,0,.12)");
+  ctx.fillStyle = light; ctx.beginPath(); ctx.ellipse(hc[0], hc[1], .046 * h, .057 * h, 0, 0, Math.PI * 2); ctx.fill();
+  if (o.facing === "back") {
+    // Short shaved hair seen from behind
+    ctx.fillStyle = "rgba(20,12,8,.45)";
+    ctx.beginPath(); ctx.ellipse(hc[0], hc[1] - .012 * h, .044 * h, .046 * h, 0, Math.PI * .95, Math.PI * 2.05); ctx.fill();
+  } else {
+    // Hair line and a simple face
+    ctx.fillStyle = "#16100c";
+    ctx.beginPath(); ctx.ellipse(hc[0], hc[1] - .028 * h, .046 * h, .03 * h, 0, Math.PI, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(20,10,5,.75)"; ctx.lineWidth = Math.max(.6, .005 * h); ctx.lineCap = "round";
+    for (const s of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(hc[0] + s * .008 * h, hc[1] - .016 * h); ctx.lineTo(hc[0] + s * .026 * h, hc[1] - .018 * h); ctx.stroke();
+      ctx.fillStyle = "#1a1210";
+      ctx.beginPath(); ctx.ellipse(hc[0] + s * .017 * h, hc[1] - .006 * h, .005 * h, .0032 * h, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = "rgba(0,0,0,.18)";
+    ctx.beginPath(); ctx.ellipse(hc[0], hc[1] + .01 * h, .007 * h, .011 * h, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(70,25,15,.6)";
+    ctx.beginPath(); ctx.moveTo(hc[0] - .012 * h, hc[1] + .028 * h); ctx.lineTo(hc[0] + .012 * h, hc[1] + .028 * h); ctx.stroke();
+  }
+  if (o.facing === "back") drawArms();
+
+  // Ball in the hands
+  if (o.ball) {
+    const bp = P(...arms.ball);
+    drawBallAt(bp[0], bp[1], .06 * h);
+  }
+  ctx.restore();
+}
+
+function armPose(pose) {
+  // [left [elbow, hand], right [elbow, hand]], ball position
+  const pose2 = (l, r, ball) => Object.assign([l, r], { ball });
+  if (pose === "ready") return pose2([[-.16, .66], [-.13, .58]], [[.17, .66], [.19, .58]], [.2, .53]);
+  if (pose === "set") return pose2([[-.15, .66], [-.06, .73]], [[.15, .66], [.06, .73]], [0, .74]);
+  if (pose === "shoot") return pose2([[-.11, .94], [-.035, 1.04]], [[.11, .94], [.035, 1.04]], [0, 1.09]);
+  if (pose === "follow") return pose2([[-.1, .95], [-.04, 1.06]], [[.1, .95], [.05, 1.08]], [0, 1.1]);
+  if (pose === "contest") return pose2([[-.18, .7], [-.21, .62]], [[.13, .96], [.11, 1.1]], [0, 0]);
+  return pose2([[-.17, .7], [-.23, .64]], [[.17, .7], [.23, .64]], [0, 0]); // defensive stance
+}
+
+function shadeColor(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = v => Math.max(0, Math.min(255, Math.round(v + (amt < 0 ? v * amt : (255 - v) * amt))));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+
+function drawBallAt(x, y, r) {
+  const g = ctx.createRadialGradient(x - r * .35, y - r * .35, r * .15, x, y, r);
+  g.addColorStop(0, "#f2a466"); g.addColorStop(1, "#b9501a");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "rgba(35,12,0,.75)"; ctx.lineWidth = Math.max(.7, r * .09);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(x, y, r * .42, r, 0, 0, Math.PI * 2); ctx.stroke();
+}
+
+// ====================================================================
+// 5. Game state
+// ====================================================================
+const S = { round: 0, you: 0, model: 0, shots: [], log: [], phase: "start", t: 0, ball: null, ripple: 0 };
+let audio = null, muted = false, noiseBuf = null;
+
+function pickShots() {
+  const pool = POOL.slice();
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return pool.slice(0, ROUNDS);
+}
+
+function current() { return S.shots[S.round]; }
+
+function kobeLook(shot) {
+  // Real uniforms: gold at home, purple on the road. #8 until 2005-06, then #24.
+  const home = shot.home === 1;
+  return {
+    jersey: home ? "#FDB927" : "#552583", trim: home ? "#552583" : "#FDB927",
+    number: shot.season <= 2005 ? "8" : "24", name: "BRYANT", skin: "#7a4a26", facing: "back",
+  };
+}
+function defenderLook(shot, i) {
+  const t = TEAMS[shot.opp] || ["Opponent", "#333333", "#ffffff"];
+  // The opponent wears its colors on the road (Lakers at home) and white at its own home
+  const away = shot.home === 1;
+  return {
+    jersey: away ? t[1] : "#f4f4f4", trim: away ? t[2] : t[1],
+    number: String([3, 5, 11, 21, 32, 4, 7, 15, 22, 34][i % 10]), code: shot.opp, skin: SKIN[i % SKIN.length], facing: "front",
+  };
+}
+function defenderSpot(shot) {
+  const d = Math.hypot(shot.x, shot.y);
+  if (d < 45) return { x: shot.x + (shot.x >= 0 ? -34 : 34), y: shot.y + 14 };
+  const k = 34 / d;
+  return { x: shot.x - shot.x * k, y: shot.y - shot.y * k };
+}
+
+function showShot() {
+  const s = current();
+  setCamera(s);
+  drawFloor();
+  const name = s.action.replace(" shot", " Shot");
+  document.getElementById("shotName").textContent = `${name} · ${s.dist} ft${s.three ? " · 3PT" : ""}`;
+  const team = TEAMS[s.opp] ? TEAMS[s.opp][0] : s.opp;
+  document.getElementById("shotInfo").textContent =
+    `${periodText(s.period)}, ${clockText(s.time)} left · ${s.home ? "Home" : "Away"} vs ${team} · ${seasonText(s.season)}${s.playoffs ? " playoffs" : ""}`;
+  document.getElementById("round").textContent = `SHOT ${S.round + 1} / ${ROUNDS}`;
+  document.getElementById("choices").style.display = "flex";
+  document.getElementById("reveal").classList.remove("show");
+  document.getElementById("nextBtn").style.visibility = "hidden";
+  document.getElementById("result").classList.remove("show");
+  S.phase = "guess"; S.t = 0; S.ball = null;
+}
+
+function guess(saidIn) {
+  if (S.phase !== "guess") return;
+  initAudio();
+  const s = current();
+  const modelIn = s.p >= .5;
+  const youRight = saidIn === (s.made === 1);
+  const modelRight = modelIn === (s.made === 1);
+  S.log.push({ you: youRight, model: modelRight });
+
+  document.getElementById("choices").style.display = "none";
+  document.getElementById("youSaid").textContent = saidIn ? "IN" : "OUT";
+  document.getElementById("modelSaid").textContent = `${modelIn ? "IN" : "OUT"} · ${Math.round(s.p * 100)}% chance`;
+  setOk("youOk", null); setOk("modelOk", null);
+  const why = [];
+  if (s.helps) why.push(`Helped the shot: <b>${s.helps}</b>`);
+  if (s.hurts) why.push(`Hurt the shot: <b>${s.hurts}</b>`);
+  document.getElementById("why").innerHTML = why.join(" &nbsp;·&nbsp; ");
+  document.getElementById("reveal").classList.add("show");
+  S.pending = { youRight, modelRight };
+  S.phase = "shoot"; S.t = 0;
+}
+
+function setOk(id, right) {
+  const el = document.getElementById(id);
+  if (right === null) { el.textContent = ""; return; }
+  el.textContent = right ? "RIGHT" : "WRONG";
+  el.style.color = right ? "var(--good)" : "var(--bad)";
+}
+
+function afterShot() {
+  const s = current();
+  const r = document.getElementById("result");
+  r.textContent = s.made ? (s.three ? "+3" : "+2") : "MISS";
+  r.classList.add("show");
+  if (S.pending.youRight) { S.you++; flash("youPts"); }
+  if (S.pending.modelRight) { S.model++; flash("modelPts"); }
+  document.getElementById("youPts").textContent = S.you;
+  document.getElementById("modelPts").textContent = S.model;
+  setOk("youOk", S.pending.youRight); setOk("modelOk", S.pending.modelRight);
+  const next = document.getElementById("nextBtn");
+  next.textContent = S.round === ROUNDS - 1 ? "SEE RESULT" : "NEXT SHOT";
+  next.style.visibility = "visible";
+  S.phase = "done";
+}
+
+function nextShot() {
+  if (S.phase !== "done") return;
+  if (S.round === ROUNDS - 1) { finish(); return; }
+  S.round++;
+  showShot();
+}
+
+function finish() {
+  S.phase = "end";
+  document.getElementById("finalScore").textContent = `YOU ${S.you} – ${S.model} MODEL`;
+  const acc = (MODEL.metrics.test_accuracy * 100).toFixed(1);
+  const msg = S.you > S.model ? "You beat the model!" : S.you < S.model ? "The model wins this time." : "It's a tie.";
+  document.getElementById("finalText").innerHTML =
+    `${msg} On all ${MODEL.metrics.test_rows.toLocaleString()} test shots, the model is right <b>${acc}%</b> of the time. Guessing "miss" every time would only get 55%.`;
+  document.getElementById("rounds").innerHTML = S.log.map(l =>
+    `<div class="round"><div style="background:${l.you ? "var(--good)" : "var(--bad)"}"></div><div style="background:${l.model ? "var(--good)" : "var(--bad)"}"></div></div>`).join("");
+  document.getElementById("end").classList.add("show");
+}
+
+function start() {
+  initAudio();
+  S.round = 0; S.you = 0; S.model = 0; S.log = []; S.shots = pickShots();
+  document.getElementById("youPts").textContent = 0;
+  document.getElementById("modelPts").textContent = 0;
+  document.getElementById("start").classList.remove("show");
+  document.getElementById("end").classList.remove("show");
+  showShot();
+  document.body.focus();
+}
+
+function flash(id) { const el = document.getElementById(id); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+
+// ====================================================================
+// 6. Shot animation (the result is the real outcome from the data)
+// ====================================================================
+const RIM = [0, 0, 100];
+const KOBE_H = 66, DEF_H = 68;
+
+function update(dt) {
+  S.ripple = Math.max(0, S.ripple - dt * 1.5);
+  if (S.phase !== "shoot" && S.phase !== "done") return;
+  S.t += dt;
+  const s = current();
+  const close = s.dist <= 3;
+  const release = close ? .3 : .42;
+  const flight = close ? .38 : .75 + s.dist * .012;
+  if (S.phase === "shoot" || S.ball) {
+    if (S.t >= release && !S.ball) {
+      const jump = close ? 26 : 16;
+      S.ball = { x0: s.x, y0: s.y, z0: KOBE_H * 1.09 + jump, t: 0, phase: "air", made: s.made === 1 };
+    }
+    const b = S.ball;
+    if (!b) return;
+    b.t += dt;
+    if (b.phase === "air") {
+      const u = Math.min(1, b.t / flight);
+      const apex = close ? 12 : 40 + s.dist * 1.6;
+      b.x = b.x0 + (RIM[0] - b.x0) * u;
+      b.y = b.y0 + (RIM[1] - b.y0) * u;
+      b.z = b.z0 + (RIM[2] + 4 - b.z0) * u + 4 * apex * u * (1 - u);
+      if (u >= 1) {
+        b.t = 0;
+        if (b.made) { b.phase = "net"; S.ripple = 1; sfx.swish(); sfx.crowd(true); }
+        else {
+          b.phase = "out"; sfx.clank(); sfx.crowd(false);
+          const ang = Math.PI / 2 + (Math.random() - .5) * 1.8;
+          b.vx = Math.cos(ang) * 120; b.vy = Math.sin(ang) * 120; b.vz = 140;
+        }
+      }
+    } else if (b.phase === "net") {
+      b.z = 104 - b.t * 120; b.x = 0; b.y = 0;
+      if (b.z <= 10) { b.phase = "floor"; b.t = 0; b.vx = 10; b.vy = 40; b.vz = 90; }
+    } else {
+      b.x += b.vx * dt; b.y += b.vy * dt; b.vz -= 600 * dt; b.z += b.vz * dt;
+      if (b.z < 4) { b.z = 4; b.vz = Math.abs(b.vz) * .55; b.vx *= .8; b.vy *= .8; }
+    }
+    if (b.phase !== "air" && S.phase === "shoot" && (b.phase !== "net" || b.t > .25)) afterShot();
+  }
+}
+
+function draw() {
+  ctx.drawImage(floor, 0, 0);
+  const s = current();
+  if (S.phase === "start" || !s) { drawBackboard(); drawRimHalf(false, 0); drawRimHalf(true, 0); return; }
+  const close = s.dist <= 3;
+  const release = close ? .3 : .42;
+  const t = S.phase === "guess" ? 0 : S.t;
+
+  // Kobe's jump and pose over time
+  let jump = 0, pose = "set", ball = true;
+  if (S.phase !== "guess") {
+    const up = release + .18;
+    jump = t < .12 ? 0 : t < up ? Math.sin((t - .12) / (up - .12) * Math.PI) * (close ? 1.2 : .7) : 0;
+    pose = t < .18 ? "set" : t < release ? "shoot" : t < release + .6 ? "follow" : "set";
+    ball = t < release;
+  }
+  const dSpot = defenderSpot(s);
+  const dJump = S.phase === "guess" ? 0 : Math.max(0, Math.sin(Math.min(1, Math.max(0, (t - .2) / .5)) * Math.PI) * .55);
+  const dPose = S.phase === "guess" ? "stand" : (t > .15 && t < 1.1 ? "contest" : "stand");
+
+  const kobe = { ...kobeLook(s), pose, jump, ball };
+  const def = { ...defenderLook(s, S.round), pose: dPose, jump: dJump };
+  const height = (x, y, hh) => project(x, y, 0)[1] - project(x, y, hh)[1];
+  const actors = [
+    { depth: project(s.x, s.y, 0)[2], draw: () => drawPlayer(project(s.x, s.y, 0), height(s.x, s.y, KOBE_H), kobe) },
+    { depth: project(dSpot.x, dSpot.y, 0)[2], draw: () => drawPlayer(project(dSpot.x, dSpot.y, 0), height(dSpot.x, dSpot.y, DEF_H), def) },
+  ];
+
+  // Shot spot marker on the floor while guessing
+  if (S.phase === "guess") {
+    poly(ctx, arcPts(s.x, s.y, 22, 0, Math.PI * 2, 40));
+    ctx.strokeStyle = "rgba(240,180,41,.9)"; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  // Players further away from the camera first
+  actors.sort((a, b) => b.depth - a.depth);
+  const b = S.ball;
+  const ballBehindRim = b && (b.phase === "net" || (b.phase === "air" && b.y < 25));
+
+  drawBackboard();
+  drawRimHalf(false, S.ripple);
+  if (ballBehindRim) drawFlyingBall(b);
+  drawRimHalf(true, S.ripple);
+  actors.forEach(a => a.draw());
+  if (b && !ballBehindRim) drawFlyingBall(b);
+}
+
+function drawFlyingBall(b) {
+  const g = project(b.x, b.y, 0);
+  ctx.fillStyle = `rgba(0,0,0,${Math.max(.05, .25 - b.z / 800)})`;
+  if (g[2] > NEAR) { const r = F * 4.7 / g[2]; ctx.beginPath(); ctx.ellipse(g[0], g[1], r, r * .32, 0, 0, Math.PI * 2); ctx.fill(); }
+  const p = project(b.x, b.y, b.z);
+  if (p[2] > NEAR) drawBallAt(p[0], p[1], Math.max(3, F * 4.7 / p[2]));
+}
+
+// ====================================================================
+// 7. Sound (generated, no files)
+// ====================================================================
+function initAudio() {
+  if (audio) { if (audio.state === "suspended") audio.resume(); return; }
+  try {
+    audio = new (window.AudioContext || window.webkitAudioContext)();
+    noiseBuf = audio.createBuffer(1, audio.sampleRate * 2, audio.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  } catch (e) { audio = null; }
+}
+function env(node, t0, peak, attack, release) {
+  const g = audio.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(peak, t0 + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + attack + release);
+  node.connect(g); g.connect(audio.destination);
+}
+function noise(t0, dur, type, freq, peak, attack, release) {
+  const src = audio.createBufferSource(); src.buffer = noiseBuf;
+  const f = audio.createBiquadFilter(); f.type = type; f.frequency.value = freq;
+  src.connect(f); env(f, t0, peak, attack, release); src.start(t0); src.stop(t0 + dur);
+}
+function tone(t0, type, f1, f2, peak, attack, release) {
+  const o = audio.createOscillator(); o.type = type;
+  o.frequency.setValueAtTime(f1, t0); o.frequency.exponentialRampToValueAtTime(f2, t0 + attack + release);
+  env(o, t0, peak, attack, release); o.start(t0); o.stop(t0 + attack + release + .05);
+}
+const ok = () => audio && !muted;
+const sfx = {
+  swish() { if (ok()) noise(audio.currentTime, .4, "bandpass", 3200, .3, .02, .3); },
+  clank() { if (!ok()) return; const t = audio.currentTime; tone(t, "triangle", 620, 560, .2, .005, .35); tone(t, "square", 930, 880, .04, .005, .2); },
+  crowd(big) { if (ok()) noise(audio.currentTime, big ? 2.2 : 1.2, "bandpass", 1100, big ? .25 : .1, .3, big ? 1.6 : .8); },
+};
+
+// ====================================================================
+// 8. Input, layout and loop
+// ====================================================================
+document.getElementById("startBtn").onclick = start;
+document.getElementById("againBtn").onclick = start;
+document.getElementById("inBtn").onclick = () => guess(true);
+document.getElementById("outBtn").onclick = () => guess(false);
+document.getElementById("nextBtn").onclick = nextShot;
+document.getElementById("icon").onclick = () => {
+  muted = !muted;
+  document.getElementById("waves").style.display = muted ? "none" : "";
+  document.getElementById("icon").style.opacity = muted ? .55 : 1;
+};
+window.addEventListener("keydown", e => {
+  if (S.phase === "start" && e.key === "Enter") start();
+  else if (S.phase === "guess" && (e.key === "ArrowLeft" || e.key === "1")) guess(true);
+  else if (S.phase === "guess" && (e.key === "ArrowRight" || e.key === "2")) guess(false);
+  else if (S.phase === "done" && (e.key === " " || e.key === "Enter")) { e.preventDefault(); nextShot(); }
+});
+
+function fit() {
+  const panelH = 205;
+  const scale = Math.min((window.innerWidth - 24) / W, (window.innerHeight - panelH - 20) / H);
+  const w = Math.max(240, W * scale);
+  cv.style.width = `${w}px`;
+  cv.style.height = `${Math.max(154, H * scale)}px`;
+  document.getElementById("panel").style.width = `${Math.max(w, 500)}px`;
+}
+window.addEventListener("resize", fit);
+
+setCamera({ x: 0, y: 240 });
+drawFloor();
+fit();
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// Small hook for automated testing
+window.__quiz = { S, start, guess, nextShot, current };
+})();
+</script>
+</body>
+</html>
